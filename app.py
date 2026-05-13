@@ -3,55 +3,108 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from datetime import date, timedelta
 
 # Page setup
 st.set_page_config(page_title="Stock Analysis Dashboard", layout="wide")
 
 st.title("Stock Analysis Dashboard")
-st.write(
-    "Enter a stock ticker to analyze historical performance, risk, and benchmark comparison against SPY."
+
+st.markdown(
+    """
+    Use this dashboard to review a stock's historical performance, risk profile,
+    and benchmark comparison against SPY. Choose a ticker and date range in the
+    sidebar, then review the key return and risk metrics below.
+    """
 )
 
 # Sidebar inputs
 st.sidebar.header("Inputs")
-ticker = st.sidebar.text_input("Enter stock ticker", value="AAPL").upper()
+ticker = st.sidebar.text_input("Enter stock ticker", value="AAPL").strip().upper()
+default_end_date = date.today()
+default_start_date = default_end_date - timedelta(days=365 * 5)
+start_date = st.sidebar.date_input("Start date", value=default_start_date)
+end_date = st.sidebar.date_input("End date", value=default_end_date)
 risk_free_rate = st.sidebar.number_input(
     "Risk-free rate (%)", value=4.0, step=0.25
 ) / 100
 
-# Download 5 years of stock and SPY data
-stock_data = yf.download(ticker, period="5y", auto_adjust=True)
-spy_data = yf.download("SPY", period="5y", auto_adjust=True)
-
-# Stop the app if the ticker is invalid
-if stock_data.empty:
-    st.error("No data found. Please enter a valid stock ticker.")
+# Stop the app if the inputs are missing or the date range does not make sense
+if not ticker:
+    st.error("Please enter a stock ticker.")
     st.stop()
 
-# Use closing prices
-# yfinance can sometimes return a one-column DataFrame instead of a Series, so squeeze() keeps it simple.
-stock_prices = stock_data["Close"].squeeze()
-spy_prices = spy_data["Close"].squeeze()
+if start_date >= end_date:
+    st.error("The start date must be before the end date.")
+    st.stop()
+
+# Download stock and SPY data using the selected dates
+try:
+    stock_data = yf.download(ticker, start=start_date, end=end_date, auto_adjust=True)
+    spy_data = yf.download("SPY", start=start_date, end=end_date, auto_adjust=True)
+except Exception as error:
+    st.error(f"Could not download market data. Please try again. Error: {error}")
+    st.stop()
+
+# Stop the app if yfinance did not return usable data
+if stock_data.empty:
+    st.error(
+        f"No price data found for {ticker}. Please check the ticker symbol or choose a wider date range."
+    )
+    st.stop()
+
+if spy_data.empty:
+    st.error("No benchmark data found for SPY. Please try a different date range.")
+    st.stop()
+
+if "Close" not in stock_data.columns or "Close" not in spy_data.columns:
+    st.error("Downloaded data is missing closing prices. Please try again.")
+    st.stop()
+
+# Use closing prices. yfinance can sometimes return a one-column DataFrame,
+# so squeeze() keeps the data simple to work with.
+stock_prices = stock_data["Close"].squeeze().dropna()
+spy_prices = spy_data["Close"].squeeze().dropna()
+
+if len(stock_prices) < 2 or len(spy_prices) < 2:
+    st.error("Not enough data found to calculate returns. Please choose a wider date range.")
+    st.stop()
 
 # Daily returns measure the day-to-day percentage change in price
 stock_returns = stock_prices.pct_change().dropna()
 spy_returns = spy_prices.pct_change().dropna()
 
-# Annualized return estimates average yearly return from daily returns
+if stock_returns.empty or spy_returns.empty:
+    st.error("Not enough daily return data found. Please choose a wider date range.")
+    st.stop()
+
+# Annualized return estimates average yearly return from daily returns.
+# There are about 252 trading days in a year, so daily average return is multiplied by 252.
 annualized_return = float(stock_returns.mean() * 252)
 
-# Annualized volatility measures yearly risk based on daily return movement
+# Annualized volatility measures yearly risk based on daily return movement.
+# Daily standard deviation is multiplied by the square root of 252 trading days.
 annualized_volatility = float(stock_returns.std() * np.sqrt(252))
 
-# Sharpe ratio measures return earned per unit of risk
-sharpe_ratio = float((annualized_return - risk_free_rate) / annualized_volatility)
+# Sharpe ratio measures return earned per unit of risk.
+# It compares stock return above the risk-free rate to the stock's volatility.
+if annualized_volatility == 0:
+    sharpe_ratio = np.nan
+else:
+    sharpe_ratio = float((annualized_return - risk_free_rate) / annualized_volatility)
 
-# Beta measures how much the stock moves compared to SPY
+# Beta measures how much the stock moves compared to SPY.
+# It is the covariance of stock and market returns divided by market variance.
 combined_returns = pd.concat([stock_returns, spy_returns], axis=1).dropna()
 combined_returns.columns = ["Stock", "SPY"]
-beta = float(combined_returns["Stock"].cov(combined_returns["SPY"]) / combined_returns["SPY"].var())
+spy_variance = combined_returns["SPY"].var()
+if combined_returns.empty or spy_variance == 0:
+    beta = np.nan
+else:
+    beta = float(combined_returns["Stock"].cov(combined_returns["SPY"]) / spy_variance)
 
-# Max drawdown measures the largest drop from a previous high
+# Max drawdown measures the largest drop from a previous high.
+# It compares each price with the highest price reached before that date.
 running_max = stock_prices.cummax()
 drawdown = (stock_prices / running_max) - 1
 max_drawdown = float(drawdown.min())
@@ -60,7 +113,11 @@ max_drawdown = float(drawdown.min())
 latest_price = float(stock_prices.iloc[-1])
 
 # Show key metrics
+st.divider()
 st.subheader(f"{ticker} Key Metrics")
+st.caption(
+    f"Analysis period: {stock_prices.index.min().date()} to {stock_prices.index.max().date()}"
+)
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Most Recent Price", f"${latest_price:.2f}")
@@ -68,8 +125,8 @@ col2.metric("Annualized Return", f"{annualized_return:.2%}")
 col3.metric("Annualized Volatility", f"{annualized_volatility:.2%}")
 
 col4, col5, col6 = st.columns(3)
-col4.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
-col5.metric("Beta vs SPY", f"{beta:.2f}")
+col4.metric("Sharpe Ratio", "N/A" if np.isnan(sharpe_ratio) else f"{sharpe_ratio:.2f}")
+col5.metric("Beta vs SPY", "N/A" if np.isnan(beta) else f"{beta:.2f}")
 col6.metric("Max Drawdown", f"{max_drawdown:.2%}")
 
 # Normalize prices so both start at 100
@@ -77,6 +134,9 @@ normalized_stock = stock_prices / stock_prices.iloc[0] * 100
 normalized_spy = spy_prices / spy_prices.iloc[0] * 100
 
 st.subheader("Stock Performance vs SPY")
+st.write(
+    "This chart compares the growth of a hypothetical $100 investment in the selected stock and SPY."
+)
 
 fig, ax = plt.subplots()
 ax.plot(normalized_stock.index, normalized_stock, label=ticker)
@@ -88,6 +148,9 @@ ax.legend()
 st.pyplot(fig)
 
 st.subheader("Daily Returns")
+st.write(
+    "Daily returns show how much the stock moved up or down each trading day. Larger swings usually mean higher risk."
+)
 
 fig2, ax2 = plt.subplots()
 ax2.plot(stock_returns.index, stock_returns)
