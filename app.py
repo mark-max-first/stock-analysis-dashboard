@@ -130,6 +130,10 @@ running_max = stock_prices.cummax()
 drawdown = (stock_prices / running_max) - 1
 max_drawdown = float(drawdown.min())
 
+# Moving averages smooth the stock price by averaging the last 50 or 200 trading days.
+moving_average_50 = stock_prices.rolling(window=50).mean()
+moving_average_200 = stock_prices.rolling(window=200).mean()
+
 # Most recent price
 latest_price = float(stock_prices.iloc[-1])
 
@@ -169,6 +173,23 @@ ax.grid(True, alpha=0.3)
 ax.legend()
 fig.tight_layout()
 st.pyplot(fig, use_container_width=True)
+
+st.subheader("Moving Average Analysis")
+st.write(
+    "Moving averages smooth price data and help identify trends. The 50-day average reacts faster, while the 200-day average shows a longer-term trend."
+)
+
+fig_ma, ax_ma = plt.subplots(figsize=(12, 5))
+ax_ma.plot(stock_prices.index, stock_prices, label=f"{ticker} Close")
+ax_ma.plot(moving_average_50.index, moving_average_50, label="50-Day Moving Average")
+ax_ma.plot(moving_average_200.index, moving_average_200, label="200-Day Moving Average")
+ax_ma.set_title(f"{ticker} Price with Moving Averages")
+ax_ma.set_xlabel("Date")
+ax_ma.set_ylabel("Price")
+ax_ma.grid(True, alpha=0.3)
+ax_ma.legend()
+fig_ma.tight_layout()
+st.pyplot(fig_ma, use_container_width=True)
 
 st.subheader("Daily Returns")
 st.write(
