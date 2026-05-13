@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 from datetime import date, timedelta
 
 # Page setup
@@ -18,6 +19,15 @@ st.markdown(
     """
 )
 
+st.subheader("How to Read This Dashboard")
+st.write(
+    "Start with the key metrics to understand return, risk, and market sensitivity. "
+    "Then use the charts to compare performance against SPY and inspect daily price swings."
+)
+st.caption(
+    "Note: Historical performance is for analysis only and does not guarantee future results."
+)
+
 # Sidebar inputs
 st.sidebar.header("Inputs")
 ticker = st.sidebar.text_input("Enter stock ticker", value="AAPL").strip().upper()
@@ -28,6 +38,17 @@ end_date = st.sidebar.date_input("End date", value=default_end_date)
 risk_free_rate = st.sidebar.number_input(
     "Risk-free rate (%)", value=4.0, step=0.25
 ) / 100
+
+st.sidebar.subheader("Input Guide")
+st.sidebar.write(
+    """
+    **Ticker:** Public stock symbol, such as AAPL or JPM.
+
+    **Start and end dates:** The historical window used for prices, returns, and risk metrics.
+
+    **Risk-free rate:** Annual rate used in the Sharpe ratio calculation.
+    """
+)
 
 # Stop the app if the inputs are missing or the date range does not make sense
 if not ticker:
@@ -138,26 +159,31 @@ st.write(
     "This chart compares the growth of a hypothetical $100 investment in the selected stock and SPY."
 )
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(figsize=(12, 5))
 ax.plot(normalized_stock.index, normalized_stock, label=ticker)
 ax.plot(normalized_spy.index, normalized_spy, label="SPY")
 ax.set_title(f"{ticker} vs SPY Growth of $100")
 ax.set_xlabel("Date")
 ax.set_ylabel("Value")
+ax.grid(True, alpha=0.3)
 ax.legend()
-st.pyplot(fig)
+fig.tight_layout()
+st.pyplot(fig, use_container_width=True)
 
 st.subheader("Daily Returns")
 st.write(
     "Daily returns show how much the stock moved up or down each trading day. Larger swings usually mean higher risk."
 )
 
-fig2, ax2 = plt.subplots()
+fig2, ax2 = plt.subplots(figsize=(12, 5))
 ax2.plot(stock_returns.index, stock_returns)
 ax2.set_title(f"{ticker} Daily Returns")
 ax2.set_xlabel("Date")
 ax2.set_ylabel("Daily Return")
-st.pyplot(fig2)
+ax2.yaxis.set_major_formatter(PercentFormatter(1.0))
+ax2.grid(True, alpha=0.3)
+fig2.tight_layout()
+st.pyplot(fig2, use_container_width=True)
 
 # Downloadable data
 st.subheader("Download Data")
