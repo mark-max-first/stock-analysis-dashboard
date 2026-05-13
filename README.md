@@ -6,6 +6,8 @@ A beginner-friendly finance dashboard built with Python and Streamlit. The app l
 
 This project was built as a finance internship resume project. It uses market data to calculate key investment metrics that analysts use to evaluate risk and return.
 
+The dashboard also visualizes downside risk over time with a drawdown chart that shows how far a stock fell from previous highs.
+
 The dashboard helps answer questions like:
 
 - How has a stock performed over the last 5 years?
@@ -24,6 +26,7 @@ The dashboard helps answer questions like:
 - Calculate Sharpe ratio
 - Calculate beta vs SPY
 - Calculate max drawdown
+- Visualize drawdown over time with a Drawdown Analysis chart
 - Show most recent stock price
 - Download stock data as a CSV file
 - View simple explanations of each finance metric
@@ -57,7 +60,7 @@ Beta measures how sensitive the stock is compared to SPY, which is used as a mar
 
 ### Max Drawdown
 
-Max drawdown shows the largest percentage drop from a previous high. This helps measure downside risk.
+Max drawdown shows the largest percentage drop from a previous high. The Drawdown Analysis chart visualizes this downside risk over time, making it easier to see when the stock experienced its largest declines.
 
 ## How to Run the App
 
