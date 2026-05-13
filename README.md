@@ -2,6 +2,8 @@
 
 A beginner-friendly finance dashboard built with Python and Streamlit. The app lets a user enter a stock ticker and analyze historical stock performance, risk, and benchmark performance against SPY.
 
+Live App: https://stock-analysis-dashboard-mark.streamlit.app
+
 ## Project Overview
 
 This project was built as a finance internship resume project. It uses market data to calculate key investment metrics that analysts use to evaluate risk and return.
