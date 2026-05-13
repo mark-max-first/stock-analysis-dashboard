@@ -8,6 +8,8 @@ This project was built as a finance internship resume project. It uses market da
 
 The dashboard also visualizes downside risk over time with a drawdown chart that shows how far a stock fell from previous highs.
 
+It also includes basic trend analysis using 50-day and 200-day moving averages.
+
 The dashboard helps answer questions like:
 
 - How has a stock performed over the last 5 years?
@@ -27,6 +29,7 @@ The dashboard helps answer questions like:
 - Calculate beta vs SPY
 - Calculate max drawdown
 - Visualize drawdown over time with a Drawdown Analysis chart
+- Plot 50-day and 200-day moving averages for basic trend analysis
 - Show most recent stock price
 - Download stock data as a CSV file
 - View simple explanations of each finance metric
@@ -61,6 +64,10 @@ Beta measures how sensitive the stock is compared to SPY, which is used as a mar
 ### Max Drawdown
 
 Max drawdown shows the largest percentage drop from a previous high. The Drawdown Analysis chart visualizes this downside risk over time, making it easier to see when the stock experienced its largest declines.
+
+### Moving Averages
+
+Moving averages smooth daily price data by averaging the stock's closing price over a set number of trading days. The 50-day moving average helps show shorter-term trends, while the 200-day moving average helps show longer-term trends.
 
 ## How to Run the App
 
