@@ -185,6 +185,21 @@ ax2.grid(True, alpha=0.3)
 fig2.tight_layout()
 st.pyplot(fig2, use_container_width=True)
 
+st.subheader("Drawdown Analysis")
+st.write(
+    "Drawdown shows how far the stock fell from its previous high. Deeper drawdowns show larger downside moves."
+)
+
+fig3, ax3 = plt.subplots(figsize=(12, 5))
+ax3.plot(drawdown.index, drawdown)
+ax3.set_title(f"{ticker} Drawdown Over Time")
+ax3.set_xlabel("Date")
+ax3.set_ylabel("Drawdown")
+ax3.yaxis.set_major_formatter(PercentFormatter(1.0))
+ax3.grid(True, alpha=0.3)
+fig3.tight_layout()
+st.pyplot(fig3, use_container_width=True)
+
 # Downloadable data
 st.subheader("Download Data")
 download_data = stock_data.copy()
