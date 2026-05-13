@@ -12,6 +12,10 @@ It also includes basic trend analysis using 50-day and 200-day moving averages.
 
 The dashboard helps users understand volatility using both annualized volatility and the distribution of daily returns.
 
+The app has two pages: Single Stock Analysis for reviewing one ticker in detail, and Stock Screener for comparing multiple tickers at once.
+
+The Stock Screener ranks stocks using a simple historical scoring model and is intended for educational analysis only, not investment advice.
+
 The dashboard helps answer questions like:
 
 - How has a stock performed over the last 5 years?
@@ -21,9 +25,11 @@ The dashboard helps answer questions like:
 
 ## Features
 
+- Navigate between Single Stock Analysis and Stock Screener pages
 - Enter any public stock ticker
 - Pull 5 years of historical stock data using yfinance
 - Compare stock performance against SPY
+- Compare multiple tickers at once with the Stock Screener
 - Calculate daily returns
 - Calculate annualized return
 - Calculate annualized volatility
@@ -76,6 +82,14 @@ Moving averages smooth daily price data by averaging the stock's closing price o
 
 The returns distribution chart shows how daily returns are spread out over time. A wider distribution usually means the stock had higher volatility, while a narrower distribution usually means daily returns were more stable.
 
+### Stock Screener
+
+The Stock Screener lets users enter multiple tickers separated by commas and compare them in one table. It calculates the same core metrics for each ticker, including annualized return, annualized volatility, Sharpe ratio, beta vs SPY, and max drawdown.
+
+The Ranking Score is a simple way to sort stocks based on historical performance and risk. Higher scores favor stronger Sharpe ratios, higher annualized returns, smaller drawdowns, and lower volatility.
+
+The screener is for educational analysis only and is not investment advice. It is based on historical data, which does not guarantee future results.
+
 ## How to Run the App
 
 1. Clone or download this project.
@@ -125,6 +139,7 @@ I also used Codex to help build, debug, and improve the project while reviewing 
 - Add company financial statement data
 - Add valuation ratios like P/E, EV/EBITDA, and dividend yield
 - Add moving averages and technical indicators
+- Expand the Stock Screener with valuation ratios, sector filters, and export options
 - Add portfolio tracking for multiple stocks
 - Add AI-generated stock summaries
 - Deploy the dashboard online using Streamlit Community Cloud
