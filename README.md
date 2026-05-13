@@ -10,6 +10,8 @@ The dashboard also visualizes downside risk over time with a drawdown chart that
 
 It also includes basic trend analysis using 50-day and 200-day moving averages.
 
+The dashboard helps users understand volatility using both annualized volatility and the distribution of daily returns.
+
 The dashboard helps answer questions like:
 
 - How has a stock performed over the last 5 years?
@@ -30,6 +32,7 @@ The dashboard helps answer questions like:
 - Calculate max drawdown
 - Visualize drawdown over time with a Drawdown Analysis chart
 - Plot 50-day and 200-day moving averages for basic trend analysis
+- View a returns distribution chart showing the spread of daily returns
 - Show most recent stock price
 - Download stock data as a CSV file
 - View simple explanations of each finance metric
@@ -68,6 +71,10 @@ Max drawdown shows the largest percentage drop from a previous high. The Drawdow
 ### Moving Averages
 
 Moving averages smooth daily price data by averaging the stock's closing price over a set number of trading days. The 50-day moving average helps show shorter-term trends, while the 200-day moving average helps show longer-term trends.
+
+### Returns Distribution
+
+The returns distribution chart shows how daily returns are spread out over time. A wider distribution usually means the stock had higher volatility, while a narrower distribution usually means daily returns were more stable.
 
 ## How to Run the App
 
