@@ -206,6 +206,22 @@ ax2.grid(True, alpha=0.3)
 fig2.tight_layout()
 st.pyplot(fig2, use_container_width=True)
 
+st.subheader("Returns Distribution")
+st.write(
+    "This chart shows how daily returns are distributed over time. Wider distributions usually mean higher volatility."
+)
+
+# A histogram groups daily returns into ranges so it is easier to see common outcomes.
+fig_dist, ax_dist = plt.subplots(figsize=(12, 5))
+ax_dist.hist(stock_returns, bins=40)
+ax_dist.set_title(f"{ticker} Daily Returns Distribution")
+ax_dist.set_xlabel("Daily Return")
+ax_dist.set_ylabel("Number of Trading Days")
+ax_dist.xaxis.set_major_formatter(PercentFormatter(1.0))
+ax_dist.grid(True, alpha=0.3)
+fig_dist.tight_layout()
+st.pyplot(fig_dist, use_container_width=True)
+
 st.subheader("Drawdown Analysis")
 st.write(
     "Drawdown shows how far the stock fell from its previous high. Deeper drawdowns show larger downside moves."
