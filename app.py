@@ -124,7 +124,7 @@ def styled_figure(title, ylabel):
 
 def show_chart(fig):
     fig.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig, width="stretch")
     plt.close(fig)
 
 
@@ -299,7 +299,7 @@ def render_single_stock_page(ticker, start_date, end_date, risk_free_rate):
             }
         )
         export_data.index.name = "Date"
-        st.dataframe(export_data.tail(20), use_container_width=True)
+        st.dataframe(export_data.tail(20), width="stretch")
         st.download_button(
             "Download analysis data as CSV",
             export_data.to_csv().encode("utf-8"),
@@ -393,7 +393,7 @@ def render_screener_page(ticker_text, start_date, end_date, risk_free_rate):
     st.caption("Scores are relative only to the submitted list and cannot be compared across separate runs.")
     if len(results) < 3:
         st.warning("Use at least three valid tickers for a more informative relative ranking.")
-    st.dataframe(format_screener_table(results[columns]), use_container_width=True, hide_index=True)
+    st.dataframe(format_screener_table(results[columns]), width="stretch", hide_index=True)
     st.download_button(
         "Download screener results as CSV",
         results[columns].to_csv(index=False).encode("utf-8"),
@@ -449,6 +449,6 @@ else:
     render_screener_page(ticker_text, start_date, end_date, risk_free_rate)
 
 st.sidebar.divider()
-st.sidebar.link_button("View source on GitHub", GITHUB_REPOSITORY, use_container_width=True)
-st.sidebar.link_button("GitHub profile", GITHUB_PROFILE, use_container_width=True)
+st.sidebar.link_button("View source on GitHub", GITHUB_REPOSITORY, width="stretch")
+st.sidebar.link_button("GitHub profile", GITHUB_PROFILE, width="stretch")
 st.sidebar.caption("Built by Mark Spinelli · Educational use only")
