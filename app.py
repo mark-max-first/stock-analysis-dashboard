@@ -7,506 +7,448 @@ import streamlit as st
 import yfinance as yf
 from matplotlib.ticker import PercentFormatter
 
+from finance import (
+    MIN_OBSERVATIONS,
+    add_ranking_score,
+    assign_category,
+    calculate_finance_metrics,
+    get_close_prices,
+)
+from validation import clean_ticker, parse_tickers
 
-# Page setup
-st.set_page_config(page_title="Stock Analysis Dashboard", layout="wide")
+
+APP_TITLE = "EquityLens"
+BENCHMARK = "SPY"
+GITHUB_PROFILE = "https://github.com/mark-max-first"
+GITHUB_REPOSITORY = f"{GITHUB_PROFILE}/stock-analysis-dashboard"
+MAX_TICKERS = 12
+
+st.set_page_config(
+    page_title=f"{APP_TITLE} | Stock Analysis Dashboard",
+    page_icon="📈",
+    layout="wide",
+)
+
+st.markdown(
+    """
+    <style>
+      .stApp { background: #f6f8fb; }
+      [data-testid="stSidebar"] { background: #0b1f33; }
+      [data-testid="stSidebar"] * { color: #f7fafc; }
+      [data-testid="stMetric"] {
+        background: #ffffff;
+        border: 1px solid #dce4ec;
+        border-radius: 12px;
+        padding: 14px 16px;
+        box-shadow: 0 3px 12px rgba(11, 31, 51, 0.05);
+      }
+      [data-testid="stMetric"] [data-testid="stMetricLabel"] p {
+        color: #52677a !important;
+      }
+      [data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #0b1f33 !important;
+      }
+      [data-testid="stMainBlockContainer"] h1,
+      [data-testid="stMainBlockContainer"] h2,
+      [data-testid="stMainBlockContainer"] h3 {
+        color: #0b1f33;
+      }
+      .hero {
+        background: linear-gradient(135deg, #0b1f33 0%, #123b5d 100%);
+        border-radius: 18px;
+        color: #ffffff;
+        padding: 28px 30px;
+        margin-bottom: 20px;
+      }
+      .hero-kicker {
+        color: #63d3c6;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .hero h1 { color: #ffffff; margin: 5px 0 7px; }
+      .hero p { color: #d8e4ee; margin: 0; max-width: 780px; }
+      .section-note {
+        border-left: 4px solid #1d8f83;
+        padding: 3px 0 3px 12px;
+        color: #425466;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
+@st.cache_data(ttl=60 * 60, show_spinner=False)
 def download_stock_data(ticker, start_date, end_date):
-    """Download adjusted price data for one ticker."""
-    return yf.download(ticker, start=start_date, end=end_date, auto_adjust=True)
+    """Download adjusted daily price data, including the selected end date."""
+    inclusive_end = end_date + timedelta(days=1)
+    data = yf.download(
+        ticker,
+        start=start_date,
+        end=inclusive_end,
+        auto_adjust=True,
+        progress=False,
+        threads=False,
+    )
+    if data is None or data.empty:
+        raise ValueError(f"No market data returned for {ticker}")
+    return data
 
 
-def get_close_prices(price_data):
-    """Pull the Close column from yfinance data and return it as a simple Series."""
-    if price_data.empty:
-        return pd.Series(dtype=float)
-
-    if isinstance(price_data.columns, pd.MultiIndex):
-        if "Close" not in price_data.columns.get_level_values(0):
-            return pd.Series(dtype=float)
-        close_prices = price_data["Close"]
-    else:
-        if "Close" not in price_data.columns:
-            return pd.Series(dtype=float)
-        close_prices = price_data["Close"]
-
-    return close_prices.squeeze().dropna()
-
-
-def calculate_finance_metrics(stock_prices, spy_prices, risk_free_rate):
-    """Calculate the main return and risk metrics used throughout the app."""
-    if len(stock_prices) < 2 or len(spy_prices) < 2:
-        return None
-
-    # Daily returns measure the day-to-day percentage change in price.
-    stock_returns = stock_prices.pct_change().dropna()
-    spy_returns = spy_prices.pct_change().dropna()
-
-    if stock_returns.empty or spy_returns.empty:
-        return None
-
-    # Annualized return estimates average yearly return from daily returns.
-    # There are about 252 trading days in a year, so daily average return is multiplied by 252.
-    annualized_return = float(stock_returns.mean() * 252)
-
-    # Annualized volatility measures yearly risk based on daily return movement.
-    # Daily standard deviation is multiplied by the square root of 252 trading days.
-    annualized_volatility = float(stock_returns.std() * np.sqrt(252))
-
-    # Sharpe ratio measures return earned per unit of risk.
-    # It compares stock return above the risk-free rate to the stock's volatility.
-    if annualized_volatility == 0 or np.isnan(annualized_volatility):
-        sharpe_ratio = np.nan
-    else:
-        sharpe_ratio = float((annualized_return - risk_free_rate) / annualized_volatility)
-
-    # Beta measures how much the stock moves compared to SPY.
-    # It is the covariance of stock and market returns divided by market variance.
-    combined_returns = pd.concat([stock_returns, spy_returns], axis=1).dropna()
-    combined_returns.columns = ["Stock", "SPY"]
-    spy_variance = combined_returns["SPY"].var()
-    if combined_returns.empty or spy_variance == 0 or np.isnan(spy_variance):
-        beta = np.nan
-    else:
-        beta = float(combined_returns["Stock"].cov(combined_returns["SPY"]) / spy_variance)
-
-    # Max drawdown measures the largest drop from a previous high.
-    # It compares each price with the highest price reached before that date.
-    running_max = stock_prices.cummax()
-    drawdown = (stock_prices / running_max) - 1
-    max_drawdown = float(drawdown.min())
-
-    return {
-        "stock_returns": stock_returns,
-        "spy_returns": spy_returns,
-        "annualized_return": annualized_return,
-        "annualized_volatility": annualized_volatility,
-        "sharpe_ratio": sharpe_ratio,
-        "beta": beta,
-        "drawdown": drawdown,
-        "max_drawdown": max_drawdown,
-    }
-
-
-def assign_category(row):
-    """Give each stock a simple label based on its historical risk and return profile."""
-    if row["Max Drawdown"] <= -0.35:
-        return "Larger drawdown risk"
-    if row["Sharpe Ratio"] >= 1 and row["Annualized Return"] > 0:
-        return "Strong historical risk-adjusted return"
-    if row["Annualized Return"] >= 0.15 and row["Annualized Volatility"] >= 0.25:
-        return "Higher risk / higher return"
-    if row["Annualized Volatility"] <= 0.20:
-        return "Lower volatility profile"
-    return "Mixed historical profile"
-
-
-def add_ranking_score(results):
-    """Create a simple score using return, risk-adjusted return, drawdown, and volatility."""
-    scored_results = results.copy()
-
-    # Higher Sharpe ratio and higher return should improve the score.
-    sharpe_score = scored_results["Sharpe Ratio"].rank(pct=True).fillna(0)
-    return_score = scored_results["Annualized Return"].rank(pct=True).fillna(0)
-
-    # Max drawdown is usually negative, so values closer to 0 are better.
-    drawdown_score = scored_results["Max Drawdown"].rank(pct=True).fillna(0)
-
-    # Lower volatility is better for this score.
-    volatility_score = scored_results["Annualized Volatility"].rank(
-        pct=True, ascending=False
-    ).fillna(0)
-
-    scored_results["Ranking Score"] = (
-        sharpe_score * 35
-        + return_score * 30
-        + drawdown_score * 20
-        + volatility_score * 15
+def render_hero(title, description):
+    st.markdown(
+        f"""
+        <div class="hero">
+          <div class="hero-kicker">Portfolio analytics project</div>
+          <h1>{title}</h1>
+          <p>{description}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    return scored_results.sort_values("Ranking Score", ascending=False)
+
+def styled_figure(title, ylabel):
+    fig, ax = plt.subplots(figsize=(12, 5))
+    fig.patch.set_facecolor("#ffffff")
+    ax.set_facecolor("#ffffff")
+    ax.set_title(title, loc="left", fontsize=14, fontweight="bold", color="#0b1f33")
+    ax.set_xlabel("Date")
+    ax.set_ylabel(ylabel)
+    ax.grid(True, alpha=0.18)
+    ax.spines[["top", "right"]].set_visible(False)
+    return fig, ax
+
+
+def show_chart(fig):
+    fig.tight_layout()
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
 
 
 def format_screener_table(results):
-    """Format numeric columns so the table is easier to read."""
     display_results = results.copy()
-    format_percent = lambda value: "N/A" if pd.isna(value) else f"{value:.2%}"
-    format_number = lambda value: "N/A" if pd.isna(value) else f"{value:.2f}"
-
-    display_results["Annualized Return"] = display_results["Annualized Return"].map(format_percent)
-    display_results["Annualized Volatility"] = display_results["Annualized Volatility"].map(
-        format_percent
-    )
-    display_results["Sharpe Ratio"] = display_results["Sharpe Ratio"].map(format_number)
-    display_results["Beta vs SPY"] = display_results["Beta vs SPY"].map(format_number)
-    display_results["Max Drawdown"] = display_results["Max Drawdown"].map(format_percent)
+    percent = lambda value: "N/A" if pd.isna(value) else f"{value:.2%}"
+    number = lambda value: "N/A" if pd.isna(value) else f"{value:.2f}"
+    for column in ["Total Return", "CAGR", "Annualized Volatility", "Max Drawdown"]:
+        display_results[column] = display_results[column].map(percent)
+    for column in ["Sharpe Ratio", "Beta vs SPY"]:
+        display_results[column] = display_results[column].map(number)
     display_results["Ranking Score"] = display_results["Ranking Score"].map(
         lambda value: "N/A" if pd.isna(value) else f"{value:.1f}"
     )
     return display_results
 
 
+def load_prices(ticker, start_date, end_date):
+    data = download_stock_data(ticker, start_date, end_date)
+    return data, get_close_prices(data)
+
+
+def render_methodology(risk_free_rate):
+    with st.expander("Methodology and limitations"):
+        st.markdown(
+            f"""
+            - **Total return** is the change from the first adjusted close to the last.
+            - **CAGR** compounds the beginning and ending adjusted prices over elapsed calendar time
+              and is shown only when at least one year of history is available.
+            - **Annualized volatility** is the standard deviation of daily returns multiplied by √252.
+            - **Sharpe ratio** annualizes average daily excess return using a user-selected
+              {risk_free_rate:.2%} annual risk-free rate.
+            - **Beta** is daily-return covariance with {BENCHMARK} divided by {BENCHMARK} variance.
+            - **Maximum drawdown** is the deepest decline from a previous adjusted-price peak.
+            - **Screener scores** are percentile rankings relative only to the submitted list.
+              A missing Sharpe ratio receives no Sharpe contribution to the score.
+
+            Prices are adjusted by the data provider for corporate actions. Results are historical,
+            depend on the selected window, and are not forecasts or investment advice.
+            """
+        )
+
+
 def render_single_stock_page(ticker, start_date, end_date, risk_free_rate):
-    """Render the original single-stock dashboard."""
-    st.title("Stock Analysis Dashboard")
-
-    st.markdown(
-        """
-        Use this dashboard to review a stock's historical performance, risk profile,
-        and benchmark comparison against SPY. Choose a ticker and date range in the
-        sidebar, then review the key return and risk metrics below.
-        """
+    render_hero(
+        f"{ticker} Stock Analysis",
+        f"Evaluate historical return, downside risk, and market sensitivity against {BENCHMARK}.",
     )
 
-    st.subheader("How to Read This Dashboard")
-    st.write(
-        "Start with the key metrics to understand return, risk, and market sensitivity. "
-        "Then use the charts to compare performance against SPY and inspect daily price swings."
-    )
-    st.caption(
-        "Note: Historical performance is for analysis only and does not guarantee future results."
-    )
+    with st.spinner(f"Loading {ticker} and {BENCHMARK} market data..."):
+        try:
+            _, stock_prices = load_prices(ticker, start_date, end_date)
+            _, benchmark_prices = load_prices(BENCHMARK, start_date, end_date)
+        except Exception:
+            st.error("Market data could not be downloaded. Please try again in a moment.")
+            st.stop()
 
-    if not ticker:
-        st.error("Please enter a stock ticker.")
+    if stock_prices.empty:
+        st.error(f"No adjusted closing prices were found for {ticker}.")
+        st.stop()
+    if benchmark_prices.empty:
+        st.error(f"No benchmark prices were found for {BENCHMARK}.")
         st.stop()
 
-    try:
-        stock_data = download_stock_data(ticker, start_date, end_date)
-        spy_data = download_stock_data("SPY", start_date, end_date)
-    except Exception as error:
-        st.error(f"Could not download market data. Please try again. Error: {error}")
-        st.stop()
-
-    if stock_data.empty:
+    metrics = calculate_finance_metrics(stock_prices, benchmark_prices, risk_free_rate)
+    if metrics is None:
         st.error(
-            f"No price data found for {ticker}. Please check the ticker symbol or choose a wider date range."
+            f"At least {MIN_OBSERVATIONS} adjusted daily prices are required. "
+            "Choose a wider date range."
         )
         st.stop()
 
-    if spy_data.empty:
-        st.error("No benchmark data found for SPY. Please try a different date range.")
-        st.stop()
-
-    stock_prices = get_close_prices(stock_data)
-    spy_prices = get_close_prices(spy_data)
-
-    if stock_prices.empty or spy_prices.empty:
-        st.error("Downloaded data is missing closing prices. Please try again.")
-        st.stop()
-
-    metrics = calculate_finance_metrics(stock_prices, spy_prices, risk_free_rate)
-    if metrics is None:
-        st.error("Not enough data found to calculate returns. Please choose a wider date range.")
-        st.stop()
-
-    stock_returns = metrics["stock_returns"]
-    annualized_return = metrics["annualized_return"]
-    annualized_volatility = metrics["annualized_volatility"]
-    sharpe_ratio = metrics["sharpe_ratio"]
-    beta = metrics["beta"]
-    drawdown = metrics["drawdown"]
-    max_drawdown = metrics["max_drawdown"]
-
-    # Moving averages smooth the stock price by averaging the last 50 or 200 trading days.
-    moving_average_50 = stock_prices.rolling(window=50).mean()
-    moving_average_200 = stock_prices.rolling(window=200).mean()
-
-    # Most recent price
-    latest_price = float(stock_prices.iloc[-1])
-
-    # Show key metrics
-    st.divider()
-    st.subheader(f"{ticker} Key Metrics")
-    st.caption(
-        f"Analysis period: {stock_prices.index.min().date()} to {stock_prices.index.max().date()}"
+    actual_start = stock_prices.index.min().date()
+    actual_end = stock_prices.index.max().date()
+    st.markdown(
+        f'<p class="section-note">Adjusted daily prices from <strong>{actual_start}</strong> through '
+        f'<strong>{actual_end}</strong>. Benchmark: <strong>{BENCHMARK}</strong>.</p>',
+        unsafe_allow_html=True,
     )
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Most Recent Price", f"${latest_price:.2f}")
-    col2.metric("Annualized Return", f"{annualized_return:.2%}")
-    col3.metric("Annualized Volatility", f"{annualized_volatility:.2%}")
+    cols = st.columns(4)
+    cols[0].metric("Latest adjusted close", f"${stock_prices.iloc[-1]:,.2f}")
+    cols[1].metric("Total return", f"{metrics['total_return']:.2%}")
+    cols[2].metric("CAGR", "N/A" if np.isnan(metrics["cagr"]) else f"{metrics['cagr']:.2%}")
+    cols[3].metric("Annualized volatility", f"{metrics['annualized_volatility']:.2%}")
 
-    col4, col5, col6 = st.columns(3)
-    col4.metric("Sharpe Ratio", "N/A" if np.isnan(sharpe_ratio) else f"{sharpe_ratio:.2f}")
-    col5.metric("Beta vs SPY", "N/A" if np.isnan(beta) else f"{beta:.2f}")
-    col6.metric("Max Drawdown", f"{max_drawdown:.2%}")
-
-    # Normalize prices so both start at 100.
-    normalized_stock = stock_prices / stock_prices.iloc[0] * 100
-    normalized_spy = spy_prices / spy_prices.iloc[0] * 100
-
-    st.subheader("Stock Performance vs SPY")
-    st.write(
-        "This chart compares the growth of a hypothetical $100 investment in the selected stock and SPY."
+    cols = st.columns(3)
+    cols[0].metric(
+        "Sharpe ratio",
+        "N/A" if np.isnan(metrics["sharpe_ratio"]) else f"{metrics['sharpe_ratio']:.2f}",
     )
+    cols[1].metric("Beta vs SPY", "N/A" if np.isnan(metrics["beta"]) else f"{metrics['beta']:.2f}")
+    cols[2].metric("Maximum drawdown", f"{metrics['max_drawdown']:.2%}")
 
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(normalized_stock.index, normalized_stock, label=ticker)
-    ax.plot(normalized_spy.index, normalized_spy, label="SPY")
-    ax.set_title(f"{ticker} vs SPY Growth of $100")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Value")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
-    st.pyplot(fig, use_container_width=True)
+    performance_tab, risk_tab, data_tab = st.tabs(["Performance", "Risk", "Data & methodology"])
 
-    st.subheader("Moving Average Analysis")
-    st.write(
-        "Moving averages smooth price data and help identify trends. The 50-day average reacts faster, while the 200-day average shows a longer-term trend."
-    )
+    with performance_tab:
+        aligned_prices = pd.concat(
+            [stock_prices.rename(ticker), benchmark_prices.rename(BENCHMARK)], axis=1
+        ).dropna()
+        growth = aligned_prices / aligned_prices.iloc[0] * 100
 
-    fig_ma, ax_ma = plt.subplots(figsize=(12, 5))
-    ax_ma.plot(stock_prices.index, stock_prices, label=f"{ticker} Close")
-    ax_ma.plot(moving_average_50.index, moving_average_50, label="50-Day Moving Average")
-    ax_ma.plot(moving_average_200.index, moving_average_200, label="200-Day Moving Average")
-    ax_ma.set_title(f"{ticker} Price with Moving Averages")
-    ax_ma.set_xlabel("Date")
-    ax_ma.set_ylabel("Price")
-    ax_ma.grid(True, alpha=0.3)
-    ax_ma.legend()
-    fig_ma.tight_layout()
-    st.pyplot(fig_ma, use_container_width=True)
+        st.subheader("Growth of $100")
+        st.caption("Both series begin at $100 on their first shared trading day.")
+        fig, ax = styled_figure(f"{ticker} vs {BENCHMARK}", "Hypothetical value ($)")
+        ax.plot(growth.index, growth[ticker], label=ticker, color="#0b6e75", linewidth=2.2)
+        ax.plot(growth.index, growth[BENCHMARK], label=BENCHMARK, color="#f4a261", linewidth=2.0)
+        ax.legend(frameon=False)
+        show_chart(fig)
 
-    st.subheader("Daily Returns")
-    st.write(
-        "Daily returns show how much the stock moved up or down each trading day. Larger swings usually mean higher risk."
-    )
+        st.subheader("Trend view")
+        st.caption("The 50-day average responds faster; the 200-day average highlights the longer trend.")
+        fig, ax = styled_figure(f"{ticker} adjusted close and moving averages", "Price ($)")
+        ax.plot(stock_prices.index, stock_prices, label="Adjusted close", color="#0b1f33", linewidth=1.6)
+        if len(stock_prices) >= 50:
+            ax.plot(
+                stock_prices.index,
+                stock_prices.rolling(50).mean(),
+                label="50-day MA",
+                color="#1d8f83",
+            )
+        if len(stock_prices) >= 200:
+            ax.plot(
+                stock_prices.index,
+                stock_prices.rolling(200).mean(),
+                label="200-day MA",
+                color="#e76f51",
+            )
+        ax.legend(frameon=False)
+        show_chart(fig)
 
-    fig2, ax2 = plt.subplots(figsize=(12, 5))
-    ax2.plot(stock_returns.index, stock_returns)
-    ax2.set_title(f"{ticker} Daily Returns")
-    ax2.set_xlabel("Date")
-    ax2.set_ylabel("Daily Return")
-    ax2.yaxis.set_major_formatter(PercentFormatter(1.0))
-    ax2.grid(True, alpha=0.3)
-    fig2.tight_layout()
-    st.pyplot(fig2, use_container_width=True)
+    with risk_tab:
+        st.subheader("Daily return history")
+        fig, ax = styled_figure(f"{ticker} daily returns", "Daily return")
+        ax.plot(metrics["stock_returns"].index, metrics["stock_returns"], color="#457b9d", linewidth=0.9)
+        ax.axhline(0, color="#0b1f33", linewidth=0.8)
+        ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+        show_chart(fig)
 
-    st.subheader("Returns Distribution")
-    st.write(
-        "This chart shows how daily returns are distributed over time. Wider distributions usually mean higher volatility."
-    )
+        left, right = st.columns(2)
+        with left:
+            st.subheader("Return distribution")
+            fig, ax = plt.subplots(figsize=(7, 4.5))
+            ax.hist(metrics["stock_returns"], bins=40, color="#1d8f83", alpha=0.9)
+            ax.set_xlabel("Daily return")
+            ax.set_ylabel("Trading days")
+            ax.xaxis.set_major_formatter(PercentFormatter(1.0))
+            ax.spines[["top", "right"]].set_visible(False)
+            show_chart(fig)
+        with right:
+            st.subheader("Drawdown from prior peak")
+            fig, ax = plt.subplots(figsize=(7, 4.5))
+            ax.fill_between(
+                metrics["drawdown"].index,
+                metrics["drawdown"].values,
+                0,
+                color="#e76f51",
+                alpha=0.75,
+            )
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Drawdown")
+            ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+            ax.spines[["top", "right"]].set_visible(False)
+            show_chart(fig)
 
-    # A histogram groups daily returns into ranges so it is easier to see common outcomes.
-    fig_dist, ax_dist = plt.subplots(figsize=(12, 5))
-    ax_dist.hist(stock_returns, bins=40)
-    ax_dist.set_title(f"{ticker} Daily Returns Distribution")
-    ax_dist.set_xlabel("Daily Return")
-    ax_dist.set_ylabel("Number of Trading Days")
-    ax_dist.xaxis.set_major_formatter(PercentFormatter(1.0))
-    ax_dist.grid(True, alpha=0.3)
-    fig_dist.tight_layout()
-    st.pyplot(fig_dist, use_container_width=True)
-
-    st.subheader("Drawdown Analysis")
-    st.write(
-        "Drawdown shows how far the stock fell from its previous high. Deeper drawdowns show larger downside moves."
-    )
-
-    fig3, ax3 = plt.subplots(figsize=(12, 5))
-    ax3.plot(drawdown.index, drawdown)
-    ax3.set_title(f"{ticker} Drawdown Over Time")
-    ax3.set_xlabel("Date")
-    ax3.set_ylabel("Drawdown")
-    ax3.yaxis.set_major_formatter(PercentFormatter(1.0))
-    ax3.grid(True, alpha=0.3)
-    fig3.tight_layout()
-    st.pyplot(fig3, use_container_width=True)
-
-    # Downloadable data
-    st.subheader("Download Data")
-    download_data = stock_data.copy()
-    download_data["Daily Return"] = stock_returns
-
-    csv = download_data.to_csv().encode("utf-8")
-
-    st.download_button(
-        label="Download Stock Data as CSV",
-        data=csv,
-        file_name=f"{ticker}_stock_data.csv",
-        mime="text/csv",
-    )
-
-    # Simple explanations
-    st.subheader("What These Metrics Mean")
-
-    st.write(
-        """
-    **Annualized Return:** The estimated yearly return based on average daily returns.
-
-    **Annualized Volatility:** A measure of risk. Higher volatility means the stock price moves around more.
-
-    **Sharpe Ratio:** Shows how much return the stock generated for each unit of risk. Higher is usually better.
-
-    **Beta vs SPY:** Measures how sensitive the stock is compared to the overall market. A beta above 1 means the stock is more volatile than SPY.
-
-    **Max Drawdown:** The largest percentage drop from a previous high. This helps show downside risk.
-    """
-    )
+    with data_tab:
+        export_data = pd.DataFrame(
+            {
+                "Adjusted Close": stock_prices,
+                "Daily Return": metrics["stock_returns"],
+                "Drawdown": metrics["drawdown"],
+            }
+        )
+        export_data.index.name = "Date"
+        st.dataframe(export_data.tail(20), use_container_width=True)
+        st.download_button(
+            "Download analysis data as CSV",
+            export_data.to_csv().encode("utf-8"),
+            file_name=f"{ticker.lower()}_historical_analysis.csv",
+            mime="text/csv",
+        )
+        render_methodology(risk_free_rate)
 
 
 def render_screener_page(ticker_text, start_date, end_date, risk_free_rate):
-    """Render a simple stock screener table."""
-    st.title("Stock Screener")
-
-    st.markdown(
-        """
-        Compare multiple stocks over the same date range using return, risk,
-        drawdown, beta, and Sharpe ratio. The ranking score is a simple educational
-        model based on historical data.
-        """
+    render_hero(
+        "Multi-Stock Screener",
+        "Compare a focused list of equities using a transparent historical risk-and-return score.",
     )
 
-    st.info(
-        "This screener is for educational analysis only and is not investment advice."
-    )
-
-    tickers = []
-    for ticker in ticker_text.split(","):
-        clean_ticker = ticker.strip().upper()
-        if clean_ticker and clean_ticker not in tickers:
-            tickers.append(clean_ticker)
-
+    tickers, invalid_tickers = parse_tickers(ticker_text)
+    if invalid_tickers:
+        st.warning("These ticker entries use unsupported characters: " + ", ".join(invalid_tickers))
     if not tickers:
-        st.error("Please enter at least one ticker.")
+        st.error("Enter at least one valid ticker.")
+        st.stop()
+    if len(tickers) > MAX_TICKERS:
+        st.error(f"Enter no more than {MAX_TICKERS} tickers at a time.")
         st.stop()
 
     try:
-        spy_data = download_stock_data("SPY", start_date, end_date)
-    except Exception as error:
-        st.error(f"Could not download SPY benchmark data. Please try again. Error: {error}")
+        _, benchmark_prices = load_prices(BENCHMARK, start_date, end_date)
+    except Exception:
+        st.error("Benchmark data could not be downloaded. Please try again in a moment.")
+        st.stop()
+    if benchmark_prices.empty:
+        st.error(f"No benchmark prices were found for {BENCHMARK}.")
         st.stop()
 
-    spy_prices = get_close_prices(spy_data)
-    if spy_prices.empty:
-        st.error("No benchmark data found for SPY. Please try a different date range.")
-        st.stop()
-
-    screener_rows = []
-    skipped_tickers = []
-
-    for ticker in tickers:
+    rows, skipped, shorter_histories = [], [], []
+    progress = st.progress(0, text="Analyzing tickers...")
+    for index, ticker in enumerate(tickers, start=1):
         try:
-            stock_data = download_stock_data(ticker, start_date, end_date)
-            stock_prices = get_close_prices(stock_data)
+            _, prices = load_prices(ticker, start_date, end_date)
+            metrics = calculate_finance_metrics(prices, benchmark_prices, risk_free_rate)
         except Exception:
-            skipped_tickers.append(ticker)
-            continue
+            metrics = None
 
-        if stock_prices.empty:
-            skipped_tickers.append(ticker)
-            continue
-
-        metrics = calculate_finance_metrics(stock_prices, spy_prices, risk_free_rate)
         if metrics is None:
-            skipped_tickers.append(ticker)
-            continue
+            skipped.append(ticker)
+        else:
+            first_date = prices.index.min().date()
+            if first_date > start_date + timedelta(days=5):
+                shorter_histories.append(f"{ticker} ({first_date})")
+            rows.append(
+                {
+                    "Ticker": ticker,
+                    "First Date": first_date.isoformat(),
+                    "Observations": len(prices),
+                    "Total Return": metrics["total_return"],
+                    "CAGR": metrics["cagr"],
+                    "Annualized Volatility": metrics["annualized_volatility"],
+                    "Sharpe Ratio": metrics["sharpe_ratio"],
+                    "Beta vs SPY": metrics["beta"],
+                    "Max Drawdown": metrics["max_drawdown"],
+                }
+            )
+        progress.progress(index / len(tickers), text=f"Analyzed {index} of {len(tickers)} tickers")
+    progress.empty()
 
-        screener_rows.append(
-            {
-                "Ticker": ticker,
-                "Annualized Return": metrics["annualized_return"],
-                "Annualized Volatility": metrics["annualized_volatility"],
-                "Sharpe Ratio": metrics["sharpe_ratio"],
-                "Beta vs SPY": metrics["beta"],
-                "Max Drawdown": metrics["max_drawdown"],
-            }
-        )
-
-    if not screener_rows:
-        st.error("No usable stock data found. Please check the tickers or choose a wider date range.")
+    if not rows:
+        st.error("No usable price history was found for the submitted tickers.")
         st.stop()
 
-    results = pd.DataFrame(screener_rows)
-    results = add_ranking_score(results)
-    results["Category"] = results.apply(assign_category, axis=1)
-
-    st.subheader("Screener Results")
-    st.caption(f"Analysis period: {start_date} to {end_date}")
-
-    display_columns = [
+    results = add_ranking_score(pd.DataFrame(rows))
+    results["Profile"] = results.apply(assign_category, axis=1)
+    columns = [
         "Ticker",
-        "Annualized Return",
+        "First Date",
+        "Observations",
+        "Total Return",
+        "CAGR",
         "Annualized Volatility",
         "Sharpe Ratio",
         "Beta vs SPY",
         "Max Drawdown",
         "Ranking Score",
-        "Category",
+        "Profile",
     ]
-    st.dataframe(
-        format_screener_table(results[display_columns]),
-        use_container_width=True,
-        hide_index=True,
-    )
 
-    st.write(
-        """
-        **Ranking Score:** Higher scores favor stronger Sharpe ratios, higher annualized returns,
-        smaller drawdowns, and lower volatility. This is a simple historical screen, not a prediction.
-        """
+    st.subheader("Ranked results")
+    st.caption(
+        f"Requested period: {start_date} through {end_date}. The score weights Sharpe ratio 35%, CAGR 30%, "
+        "maximum drawdown 20%, and volatility 15%."
     )
-
-    if skipped_tickers:
+    st.caption("Scores are relative only to the submitted list and cannot be compared across separate runs.")
+    if len(results) < 3:
+        st.warning("Use at least three valid tickers for a more informative relative ranking.")
+    st.dataframe(format_screener_table(results[columns]), use_container_width=True, hide_index=True)
+    st.download_button(
+        "Download screener results as CSV",
+        results[columns].to_csv(index=False).encode("utf-8"),
+        file_name="stock_screener_results.csv",
+        mime="text/csv",
+    )
+    if skipped:
+        st.warning("Skipped because data was unavailable or incomplete: " + ", ".join(skipped))
+    if shorter_histories:
         st.warning(
-            "Skipped tickers with missing or incomplete data: " + ", ".join(skipped_tickers)
+            "These tickers have less history than the requested window: "
+            + ", ".join(shorter_histories)
         )
+    st.info("The ranking is descriptive, not predictive. It is not a recommendation to buy or sell.")
+    render_methodology(risk_free_rate)
 
 
-# Sidebar page controls
-page = st.sidebar.selectbox(
-    "Select page",
-    ["Single Stock Analysis", "Stock Screener"],
-)
+st.sidebar.markdown(f"## 📈 {APP_TITLE}")
+st.sidebar.caption("Historical equity risk and return analysis")
+page = st.sidebar.radio("Analysis", ["Single stock", "Stock screener"])
 
-st.sidebar.header("Inputs")
+st.sidebar.markdown("### Analysis period")
 default_end_date = date.today()
 default_start_date = default_end_date - timedelta(days=365 * 5)
-
 start_date = st.sidebar.date_input("Start date", value=default_start_date)
 end_date = st.sidebar.date_input("End date", value=default_end_date)
 risk_free_rate = st.sidebar.number_input(
-    "Risk-free rate (%)", value=4.0, step=0.25
+    "Annual risk-free rate (%)",
+    min_value=0.0,
+    max_value=25.0,
+    value=4.0,
+    step=0.25,
+    help="User-selected assumption used only in the Sharpe ratio.",
 ) / 100
 
 if start_date >= end_date:
-    st.error("The start date must be before the end date.")
+    st.error("The start date must be earlier than the end date.")
     st.stop()
 
-if page == "Single Stock Analysis":
-    ticker = st.sidebar.text_input("Enter stock ticker", value="AAPL").strip().upper()
-
-    st.sidebar.subheader("Input Guide")
-    st.sidebar.write(
-        """
-        **Ticker:** Public stock symbol, such as AAPL or JPM.
-
-        **Start and end dates:** The historical window used for prices, returns, and risk metrics.
-
-        **Risk-free rate:** Annual rate used in the Sharpe ratio calculation.
-        """
-    )
-
+if page == "Single stock":
+    raw_ticker = st.sidebar.text_input("Ticker", value="AAPL", help="Examples: AAPL, JPM, BRK-B")
+    ticker = clean_ticker(raw_ticker)
+    if not ticker:
+        st.error("Enter a valid US-listed equity or ETF ticker using letters, numbers, periods, or hyphens.")
+        st.stop()
     render_single_stock_page(ticker, start_date, end_date, risk_free_rate)
-
 else:
     ticker_text = st.sidebar.text_area(
-        "Enter tickers separated by commas",
-        value="AAPL, MSFT, JPM, NVDA, TSLA, GOOGL, AMZN",
+        "Tickers separated by commas",
+        value="AAPL, MSFT, JPM, NVDA, GOOGL",
+        help=f"Up to {MAX_TICKERS} unique tickers.",
     )
-
-    st.sidebar.subheader("Input Guide")
-    st.sidebar.write(
-        """
-        **Tickers:** Enter multiple public stock symbols separated by commas.
-
-        **Start and end dates:** The historical window used for each stock.
-
-        **Risk-free rate:** Annual rate used in each Sharpe ratio calculation.
-        """
-    )
-
     render_screener_page(ticker_text, start_date, end_date, risk_free_rate)
+
+st.sidebar.divider()
+st.sidebar.link_button("View source on GitHub", GITHUB_REPOSITORY, use_container_width=True)
+st.sidebar.link_button("GitHub profile", GITHUB_PROFILE, use_container_width=True)
+st.sidebar.caption("Built by Mark Spinelli · Educational use only")
